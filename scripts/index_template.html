@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADJSCC — Neural Architecture & Live Internals</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2333; --line:#30363d;
+    --fg:#e6edf3; --dim:#9aa7b4; --acc:#58a6ff; --acc2:#3fb950;
+    --enc:#1f6feb; --dec:#8957e5; --chan:#db6d28; --af:#238636;
+    --code:#0b0f14;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f6f8fa;--panel:#fff;--panel2:#eef2f7;--line:#d0d7de;
+      --fg:#1f2328;--dim:#57606a;--code:#f0f3f6;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);color:var(--fg);}
+  .wrap{max-width:980px;margin:0 auto;padding:2.5rem 1.25rem 5rem}
+  h1{font-size:2rem;margin:0 0 .25rem;letter-spacing:-.02em}
+  h2{font-size:1.35rem;margin:2.5rem 0 .75rem;padding-bottom:.35rem;border-bottom:1px solid var(--line)}
+  h3{font-size:1.05rem;margin:1.5rem 0 .5rem;color:var(--acc)}
+  .lede{color:var(--dim);font-size:1.05rem;max-width:72ch}
+  a{color:var(--acc)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+    background:var(--code);padding:.12em .4em;border-radius:4px;border:1px solid var(--line)}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;
+    padding:1rem;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;font-size:.82rem;line-height:1.5}
+  pre code{background:none;border:none;padding:0}
+  .tag{display:inline-block;font-size:.72rem;font-weight:600;padding:.15em .55em;border-radius:999px;
+    text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
+  .t-enc{background:color-mix(in srgb,var(--enc) 22%,transparent);color:var(--enc)}
+  .t-dec{background:color-mix(in srgb,var(--dec) 22%,transparent);color:var(--dec)}
+  .t-chan{background:color-mix(in srgb,var(--chan) 22%,transparent);color:var(--chan)}
+  .t-af{background:color-mix(in srgb,var(--af) 26%,transparent);color:var(--af)}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:.5rem;margin:1.5rem 0;justify-content:center}
+  .stage{flex:1 1 120px;min-width:110px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:.75rem;text-align:center}
+  .stage .lab{font-weight:600;font-size:.9rem}
+  .stage .dim{color:var(--dim);font-size:.72rem;margin-top:.3rem;font-family:ui-monospace,Menlo,monospace}
+  .stage.enc{border-top:3px solid var(--enc)}
+  .stage.chan{border-top:3px solid var(--chan)}
+  .stage.dec{border-top:3px solid var(--dec)}
+  .arrow{display:flex;align-items:center;color:var(--dim);font-size:1.3rem}
+
+  table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.85rem}
+  th,td{border:1px solid var(--line);padding:.5rem .65rem;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  td.mono,th.mono{font-family:ui-monospace,Menlo,monospace;font-size:.9em;white-space:nowrap}
+  .note{background:var(--panel2);border-left:3px solid var(--acc);border-radius:0 8px 8px 0;
+    padding:.8rem 1rem;margin:1.2rem 0;font-size:.92rem}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  @media (max-width:640px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1rem}
+  .card h3{margin-top:0}
+  ul{padding-left:1.2rem}
+  li{margin:.25rem 0}
+  .foot{color:var(--dim);font-size:.85rem;margin-top:3rem;border-top:1px solid var(--line);padding-top:1rem}
+  .af-svg{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:1rem 0}
+
+  /* ---- interactive explorer ---- */
+  .explorer{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.25rem;margin:1.5rem 0}
+  .thumbs{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}
+  .thumbs img{width:46px;height:46px;image-rendering:pixelated;border-radius:8px;
+    border:2px solid transparent;cursor:pointer}
+  .thumbs img.sel{border-color:var(--acc)}
+  .sliderrow{display:flex;align-items:center;gap:1rem;margin:.5rem 0 1.25rem}
+  .sliderrow input[type=range]{flex:1;accent-color:var(--acc)}
+  .snrpill{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--acc);
+    background:var(--code);border:1px solid var(--line);border-radius:6px;padding:.2rem .55rem;min-width:5.5rem;text-align:center}
+  .stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+  .vstage{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:.85rem}
+  .vstage h4{margin:0 0 .5rem;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);
+    display:flex;align-items:center;gap:.4rem}
+  .vstage .num{background:var(--acc);color:#fff;border-radius:5px;font-size:.7rem;padding:.05rem .4rem;font-weight:700}
+  .vstage img,.vstage canvas{width:100%;image-rendering:pixelated;border-radius:6px;border:1px solid var(--line);display:block;background:var(--bg)}
+  .rgbrow{display:flex;gap:.4rem}
+  .rgbrow figure{flex:1;margin:0;text-align:center}
+  .rgbrow img{image-rendering:pixelated}
+  .rgbrow figcaption{font-size:.68rem;color:var(--dim);margin-top:.2rem}
+  .cap{font-size:.72rem;color:var(--dim);margin:.45rem 0 0;line-height:1.4}
+  .metric{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--acc2);font-size:1.1rem}
+  .legend{display:flex;align-items:center;gap:.5rem;font-size:.7rem;color:var(--dim);margin-top:.4rem}
+  .lbar{height:9px;flex:1;border-radius:3px;background:linear-gradient(90deg,#3b4cc0,#f2f2f2,#b40426)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>ADJSCC — Architecture &amp; Live Internals</h1>
+<p class="lede">
+  Neural architecture behind this reproduction of
+  <a href="https://arxiv.org/abs/2012.00533">“Wireless Image Transmission Using Deep Source-Channel Coding
+  With Attention Modules”</a>. One autoencoder sends a CIFAR-10 image straight over a noisy channel — no
+  JPEG, no LDPC — and <strong>Attention Feature (AF)</strong> modules feed the channel SNR into the network
+  so <em>one</em> model covers 0–20&nbsp;dB. Everything in the explorer below is <strong>real data</strong>
+  pulled from the trained checkpoint. See the full
+  <a href="viz/model_architecture.html">model architecture &amp; training curves</a>.
+</p>
+
+<div class="flow">
+  <div class="stage enc"><div class="lab">Image</div><div class="dim">3 × 32 × 32</div></div>
+  <div class="arrow">→</div>
+  <div class="stage enc"><div class="lab">Encoder</div><div class="dim">5 conv + AF</div></div>
+  <div class="arrow">→</div>
+  <div class="stage enc"><div class="lab">Code</div><div class="dim">C × 8 × 8</div></div>
+  <div class="arrow">→</div>
+  <div class="stage chan"><div class="lab">Power norm</div><div class="dim">avg pwr = 1</div></div>
+  <div class="arrow">→</div>
+  <div class="stage chan"><div class="lab">AWGN</div><div class="dim">+ noise(SNR)</div></div>
+  <div class="arrow">→</div>
+  <div class="stage dec"><div class="lab">Decoder</div><div class="dim">5 deconv + AF</div></div>
+  <div class="arrow">→</div>
+  <div class="stage dec"><div class="lab">Image ĥ</div><div class="dim">3 × 32 × 32</div></div>
+</div>
+
+<h2>Live explorer — watch the internals move with SNR</h2>
+<p>
+  Pick an image, drag the <strong>SNR</strong> slider. Every panel is precomputed from the trained
+  <code>C=16</code> model at that SNR — the encoder feature maps, the 16-channel codeword actually put on air,
+  the AF gates, and the reconstruction. Only the channel noise scatter is redrawn live.
+</p>
+
+<div class="explorer">
+  <div class="thumbs" id="thumbs"></div>
+  <div class="sliderrow">
+    <span style="color:var(--dim);font-size:.85rem">Channel SNR</span>
+    <input type="range" id="snr" min="0" max="0" step="1">
+    <span class="snrpill" id="snrTxt">— dB</span>
+  </div>
+
+  <div class="stages">
+    <div class="vstage">
+      <h4><span class="num">0</span> Input · RGB channels</h4>
+      <img id="vInput" alt="input">
+      <div class="rgbrow" style="margin-top:.4rem">
+        <figure><img id="vR" alt="R"><figcaption>R</figcaption></figure>
+        <figure><img id="vG" alt="G"><figcaption>G</figcaption></figure>
+        <figure><img id="vB" alt="B"><figcaption>B</figcaption></figure>
+      </div>
+      <p class="cap">The 3×32×32 image the encoder sees, split into its colour planes.</p>
+    </div>
+
+    <div class="vstage">
+      <h4><span class="num">1</span> Encoder layer-1 feature maps</h4>
+      <img id="vEnc1" alt="encoder features">
+      <p class="cap">16 of layer-1’s 256 channels (16×16 each). Coolwarm = signed activation.
+        These shift with SNR — the AF gates are already steering.</p>
+      <div class="legend"><span>−</span><span class="lbar"></span><span>+</span></div>
+    </div>
+
+    <div class="vstage">
+      <h4><span class="num">2</span> Codeword sent · C=16 @ 8×8</h4>
+      <img id="vCode" alt="codeword">
+      <p class="cap">The full bottleneck the network transmits: all <span id="cC">16</span> channels,
+        8×8 each = 1024 real values → 512 complex symbols. This <em>is</em> the message on air.</p>
+    </div>
+
+    <div class="vstage">
+      <h4><span class="num">3</span> AF gates · bottleneck layer</h4>
+      <canvas id="vGate" height="150"></canvas>
+      <p class="cap">Per-channel attention weights (0–1) the SNR produces for the 16 code channels.
+        Watch them rebalance as you drag — this is how one model adapts.</p>
+    </div>
+
+    <div class="vstage">
+      <h4><span class="num">4</span> Received constellation</h4>
+      <canvas id="vConst" height="180"></canvas>
+      <p class="cap">Each dot = one complex symbol + <em>live</em> AWGN. Low SNR → fat noise cloud.</p>
+    </div>
+
+    <div class="vstage">
+      <h4><span class="num">5</span> Reconstruction</h4>
+      <img id="vRecon" alt="reconstruction">
+      <p class="cap" style="margin-top:.55rem">PSNR at this SNR: <span class="metric" id="vPsnr">—</span> dB</p>
+    </div>
+  </div>
+</div>
+
+<h2>Bandwidth ratio R — the one number that sets the size</h2>
+<p>
+  For a 32×32 image the encoder outputs a <code>C × 8 × 8</code> tensor = <code>C·64</code> real values.
+  Split into complex symbols (real + imag), that is the channel budget. The
+  <strong>bandwidth ratio</strong> is
+</p>
+<pre><code>R = C / 96          # channel symbols per source dimension
+ratio_to_C(R) = round(R · 96)     # R = 1/6  →  C = 16</code></pre>
+<p>
+  Lower <code>C</code> = harder compression, fewer symbols on air, lower quality. This single knob
+  (<code>--ratio</code>) is the whole quality-vs-bandwidth tradeoff. Default reproduction:
+  <code>R = 1/6 → C = 16</code> (the 16 heatmaps in panel 2).
+</p>
+
+<h2><span class="tag t-enc">Encoder</span> pixels → channel symbols</h2>
+<p>
+  Five convolutional layers. First two stride-2 blocks shrink <code>32→16→8</code> spatially; the last
+  three keep <code>8×8</code> and squeeze channel depth down to <code>C</code>. Every layer is
+  <code>Conv → PReLU → AF</code>.
+</p>
+<table>
+  <thead><tr><th>Layer</th><th class="mono">kernel / stride</th><th class="mono">out shape</th><th>role</th></tr></thead>
+  <tbody>
+    <tr><td>Conv 1</td><td class="mono">5×5 / s2</td><td class="mono">F × 16 × 16</td><td>downsample (panel 1)</td></tr>
+    <tr><td>Conv 2</td><td class="mono">5×5 / s2</td><td class="mono">F × 8 × 8</td><td>downsample</td></tr>
+    <tr><td>Conv 3</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine</td></tr>
+    <tr><td>Conv 4</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine</td></tr>
+    <tr><td>Conv 5</td><td class="mono">5×5 / s1</td><td class="mono">C × 8 × 8</td><td>project to budget (panel 2)</td></tr>
+  </tbody>
+</table>
+<p>
+  <code>F</code> is net width (default <code>256</code>, <code>--filters</code>). <code>PReLU</code> is a
+  leaky-ReLU whose negative slope is <em>learned</em> per channel. After each activation an AF module
+  re-weights the channels using the current SNR.
+</p>
+
+<h2><span class="tag t-chan">Power normalization + AWGN channel</span></h2>
+<p>
+  The <code>C×8×8</code> map is flattened to a vector <code>z</code> of length <code>C·64</code> and
+  <strong>power-normalized</strong> so average power per element is exactly 1 — enforcing the transmit
+  power budget the SNR is defined against:
+</p>
+<pre><code>scale = sqrt( k / (Σ zᵢ²) )        # k = C·64
+z_norm = z · scale                 # mean(z_norm²) = 1</code></pre>
+<p>
+  The vector is read as complex symbols (first half real, second half imag). The <strong>AWGN channel</strong>
+  adds Gaussian noise set by the SNR in dB:
+</p>
+<pre><code>σ² = 1 / 10^(SNR_dB / 10)           # noise power at unit signal power
+per-component std = σ / √2          # split across real & imag
+y = z_norm + N(0, σ²)</code></pre>
+<div class="note">
+  This is the <strong>only</strong> place noise enters, and it is a plain <code>+ randn</code> — fully
+  differentiable, so gradients flow straight back through the channel into the encoder. That is what lets the
+  encoder learn a code robust to noise instead of compressor + separate error code.
+  <em>(Rayleigh fading is stubbed; AWGN is the core result.)</em>
+</div>
+
+<h2><span class="tag t-dec">Decoder</span> received symbols → image</h2>
+<p>
+  Mirror of the encoder: five transposed convolutions. Three keep <code>8×8</code>, then two stride-2 blocks
+  upsample <code>8→16→32</code>. Layers 1–4 are <code>ConvT → PReLU → AF</code>; the final layer uses
+  <strong>sigmoid</strong> to bound outputs into <code>[0,1]</code> (panel 5).
+</p>
+
+<h2><span class="tag t-af">AF module</span> — how SNR steers the network</h2>
+<p>
+  The paper’s contribution and the reason one model spans all SNRs. An <strong>Attention Feature</strong>
+  module is a squeeze-and-excitation gate conditioned on the SNR. For a feature map <code>x</code> of shape
+  <code>(B, Ch, H, W)</code> and scalar SNR:
+</p>
+
+<svg class="af-svg" viewBox="0 0 720 200" role="img" aria-label="AF module dataflow">
+  <style>
+    .b{fill:var(--panel2);stroke:var(--line);stroke-width:1.5}
+    .tx{fill:var(--fg);font:13px ui-monospace,Menlo,monospace}
+    .td{fill:var(--dim);font:11px ui-monospace,Menlo,monospace}
+    .ar{stroke:var(--dim);stroke-width:1.5;fill:none;marker-end:url(#h)}
+    .hl{fill:color-mix(in srgb,var(--af) 22%,transparent);stroke:var(--af);stroke-width:1.5}
+  </style>
+  <defs><marker id="h" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="var(--dim)"/></marker></defs>
+  <rect class="b" x="10" y="70" width="90" height="46" rx="6"/>
+  <text class="tx" x="30" y="90">x</text><text class="td" x="18" y="106">B·Ch·H·W</text>
+  <rect class="b" x="140" y="70" width="110" height="46" rx="6"/>
+  <text class="tx" x="150" y="90">avg-pool</text><text class="td" x="150" y="106">→ ctx (B·Ch)</text>
+  <rect class="hl" x="140" y="130" width="110" height="40" rx="6"/>
+  <text class="tx" x="150" y="155">concat SNR</text>
+  <rect class="b" x="300" y="88" width="90" height="46" rx="6"/>
+  <text class="tx" x="312" y="108">FC → ReLU</text><text class="td" x="330" y="124">Ch</text>
+  <rect class="b" x="430" y="88" width="110" height="46" rx="6"/>
+  <text class="tx" x="440" y="108">FC → sigmoid</text><text class="td" x="470" y="124">gate s∈[0,1]</text>
+  <rect class="b" x="590" y="70" width="120" height="46" rx="6"/>
+  <text class="tx" x="618" y="90">x · s</text><text class="td" x="600" y="106">gated output</text>
+  <path class="ar" d="M100,93 L138,93"/>
+  <path class="ar" d="M195,116 L195,128"/>
+  <path class="ar" d="M250,111 L298,111"/>
+  <path class="ar" d="M390,111 L428,111"/>
+  <path class="ar" d="M540,111 L575,111 L575,93 L588,93"/>
+  <path class="ar" d="M55,116 C55,180 560,180 588,116" stroke-dasharray="4 3"/>
+</svg>
+
+<pre><code>ctx = x.mean(dim=(H,W))              # global avg pool  → (B, Ch)
+s   = concat([ctx, snr])            # append SNR       → (B, Ch+1)
+s   = relu( fc1(s) )                # Linear(Ch+1 → Ch)
+s   = sigmoid( fc2(s) )            # Linear(Ch → Ch)  → gate in [0,1]
+out = x * s[:, :, None, None]       # per-channel rescale</code></pre>
+
+<div class="grid2">
+  <div class="card">
+    <h3>What it does</h3>
+    <ul>
+      <li><strong>Squeeze:</strong> global average pool → one number per channel, a compact summary.</li>
+      <li><strong>Condition:</strong> the SNR scalar is concatenated, so the gate sees content <em>and</em>
+        channel quality.</li>
+      <li><strong>Excite:</strong> two FC layers give one weight per channel in <code>[0,1]</code>; each
+        feature channel is scaled by its weight (panel 3).</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Why it matters</h3>
+    <ul>
+      <li>At <strong>low SNR</strong> the net emphasizes robust, low-detail channels; at <strong>high SNR</strong>
+        it passes fine detail. The gate learns this per-SNR.</li>
+      <li>One weight set serves the whole range — no separate model per SNR (the baseline’s weakness).</li>
+      <li>Costs only <code>2·Ch²</code> parameters per module — tiny next to the conv stack.</li>
+    </ul>
+  </div>
+</div>
+<p>
+  AF modules sit after every conv/deconv activation: <strong>5 in the encoder</strong> (widths
+  <code>F,F,F,F,C</code>) and <strong>4 in the decoder</strong> (all width <code>F</code>). The same SNR is
+  broadcast to all of them and also sets the channel noise — the network is told exactly the condition it
+  must survive.
+</p>
+
+<h2>Training objective</h2>
+<p>
+  End-to-end MSE between input and reconstruction; SNR sampled uniformly from the training range each step
+  (ADJSCC) or fixed (baseline). Metrics: <strong>PSNR</strong> and single-scale <strong>SSIM</strong> —
+  CIFAR’s 32×32 is too small for MS-SSIM’s 5-scale pyramid.
+</p>
+<pre><code>ADJSCC :  train SNR ~ Uniform[0, 20] dB,  AF modules on   → one model, full range
+baseline: train SNR = fixed (e.g. 1 or 19 dB), AF off      → one model per SNR</code></pre>
+<div class="note">
+  <strong>Headline experiment.</strong> A baseline trained at 19&nbsp;dB collapses when tested at 1&nbsp;dB
+  (and vice-versa) — SNR <em>mismatch</em>. ADJSCC, told the true SNR through its AF gates, tracks the best
+  fixed-SNR model at <em>every</em> point with a single set of weights.
+</div>
+
+<p class="foot">
+  Explorer data baked live from <code>ckpt/adjscc_r16.pt</code> via <code>scripts/viz_internals.py</code>.
+  Architecture: <code>adjscc/models.py</code> + <code>adjscc/channel.py</code>. Reproduction of
+  arXiv:2012.00533, CIFAR-10 / AWGN.
+</p>
+
+</div>
+
+<script>
+const DATA = __DATA__;
+let img = 0;
+const $ = id => document.getElementById(id);
+const snr = $('snr');
+snr.max = DATA.snr_list.length - 1;
+snr.value = Math.floor(DATA.snr_list.length / 2);
+$('cC').textContent = DATA.C;
+
+function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function accent(){return getComputedStyle(document.documentElement).getPropertyValue('--acc').trim();}
+
+function drawGate(vals){
+  const cv=$('vGate'), ctx=cv.getContext('2d');
+  const w=cv.width=cv.clientWidth, h=cv.height;
+  ctx.clearRect(0,0,w,h);
+  const n=vals.length, gap=3, bw=(w-gap*(n+1))/n;
+  ctx.fillStyle=accent();
+  for(let i=0;i<n;i++){
+    const bh=vals[i]*(h-18);
+    ctx.globalAlpha=.4+.6*vals[i];
+    ctx.fillRect(gap+i*(bw+gap), h-bh-14, bw, bh);
+  }
+  ctx.globalAlpha=1; ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--dim');
+  ctx.font='10px ui-monospace,monospace'; ctx.fillText('code channel 0…'+(n-1), gap, h-2);
+}
+
+function drawConst(tx, s){
+  const cv=$('vConst'), ctx=cv.getContext('2d');
+  const sigma=Math.sqrt(1/Math.pow(10,s/10))/Math.SQRT2;
+  const w=cv.width=cv.clientWidth, h=cv.height, cx=w/2, cy=h/2, sc=Math.min(w,h)/7;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(128,128,128,.3)';ctx.beginPath();
+  ctx.moveTo(0,cy);ctx.lineTo(w,cy);ctx.moveTo(cx,0);ctx.lineTo(cx,h);ctx.stroke();
+  ctx.fillStyle=accent();
+  for(const [re,ie] of tx){
+    const x=cx+(re+sigma*randn())*sc, y=cy-(ie+sigma*randn())*sc;
+    ctx.globalAlpha=.5;ctx.beginPath();ctx.arc(x,y,2.3,0,7);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function render(){
+  const si=+snr.value, s=DATA.snr_list[si], im=DATA.images[img], p=im.per[si];
+  $('snrTxt').textContent=s+' dB';
+  $('vInput').src=im.input;
+  $('vR').src=im.rgb[0]; $('vG').src=im.rgb[1]; $('vB').src=im.rgb[2];
+  $('vEnc1').src=p.enc1; $('vCode').src=p.code; $('vRecon').src=p.recon;
+  $('vPsnr').textContent=p.psnr.toFixed(2);
+  drawGate(p.gate); drawConst(p.tx, s);
+}
+
+function buildThumbs(){
+  const t=$('thumbs'); t.innerHTML='';
+  DATA.images.forEach((im,i)=>{const e=document.createElement('img');
+    e.src=im.input; e.className=i===img?'sel':''; e.title='image '+i;
+    e.onclick=()=>{img=i; buildThumbs(); render();};
+    t.appendChild(e);});
+}
+snr.addEventListener('input',render);
+window.addEventListener('resize',render);
+buildThumbs(); render();
+</script>
+</body>
+</html>
