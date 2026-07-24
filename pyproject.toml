@@ -9,4 +9,5 @@ dependencies = [
     "pytorch-msssim>=1.0.0",
     "torch>=2.13.0",
     "torchvision>=0.28.0",
+    "wandb>=0.18.0",
 ]

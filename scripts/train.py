@@ -26,6 +26,7 @@ def parse_args():
     p.add_argument("--batch", type=int, default=64)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--out", default="ckpt/model.pt")
+    p.add_argument("--no-wandb", action="store_true", help="disable wandb logging")
     return p.parse_args()
 
 

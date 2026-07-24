@@ -1,11 +1,57 @@
 """Reusable training / evaluation logic. CLI wrappers live in root train.py, eval.py."""
 import os
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
 import torch
 
 from .models import DeepJSCC, ratio_to_C
 from .data import loaders
 from .metrics import psnr, ssim
+
+
+def load_env():
+    """Read repo-root .env into os.environ (only keys not already set). No dep."""
+    f = Path(__file__).resolve().parent.parent / ".env"
+    if not f.exists():
+        return
+    for line in f.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def init_wandb(args, C):
+    """Return a wandb run, or None if disabled / wandb unavailable / no API key."""
+    if getattr(args, "no_wandb", False):
+        return None
+    load_env()
+    if not os.environ.get("WANDB_API_KEY"):
+        print("wandb: no WANDB_API_KEY in env/.env; skipping logging")
+        return None
+    try:
+        import wandb
+    except ImportError:
+        print("wandb: not installed; skipping logging")
+        return None
+
+    arch = "adjscc" if args.attention else "deepjscc"
+    snr = f"snr{args.snr_min:g}-{args.snr_max:g}" if args.attention else f"snr{args.snr_fixed:g}"
+    name = f"{arch}_r{C/96:.3f}_{snr}_{args.channel}_{datetime.now():%m%d-%H%M}"
+    return wandb.init(
+        project=os.environ.get("WANDB_PROJECT", "wireless-image-transmission"),
+        name=name,
+        config={
+            "arch": arch, "attention": args.attention, "channel": args.channel,
+            "C": C, "ratio": C / 96, "filters": args.filters,
+            "snr_min": args.snr_min, "snr_max": args.snr_max, "snr_fixed": args.snr_fixed,
+            "epochs": args.epochs, "batch": args.batch, "lr": args.lr,
+        },
+        tags=[arch, args.channel],
+    )
 
 
 def pick_device():
@@ -51,6 +97,8 @@ def train(args):
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     best = -1e9
 
+    run_wb = init_wandb(args, C)
+
     for ep in range(1, args.epochs + 1):
         model.train()
         run = 0.0
@@ -63,14 +111,21 @@ def train(args):
             loss.backward()
             opt.step()
             run += loss.item()
+        train_mse = run / len(train_loader)
         val = eval_psnr(model, test_loader, eval_snr, device)
-        print(f"ep {ep:3d} train_mse {run/len(train_loader):.5f} "
+        print(f"ep {ep:3d} train_mse {train_mse:.5f} "
               f"test_psnr@{eval_snr:.0f}dB {val:.2f}")
         if val > best:
             best = val
             torch.save({"state_dict": model.state_dict(), "args": vars(args),
                         "C": C, "psnr": val}, args.out)
+        if run_wb is not None:
+            run_wb.log({"epoch": ep, "train_mse": train_mse,
+                        f"test_psnr@{eval_snr:g}dB": val, "best_psnr": best})
     print(f"best test PSNR {best:.2f} -> {args.out}")
+    if run_wb is not None:
+        run_wb.summary["best_psnr"] = best
+        run_wb.finish()
     return best
 
 
