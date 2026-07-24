@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADJSCC — Model Architecture</title>
+<style>
+  :root{
+    --bg:#0d1117;--panel:#161b22;--panel2:#1c2333;--line:#30363d;
+    --fg:#e6edf3;--dim:#9aa7b4;--acc:#58a6ff;--acc2:#3fb950;
+    --enc:#1f6feb;--dec:#8957e5;--chan:#db6d28;--af:#238636;--code:#0b0f14;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f6f8fa;--panel:#fff;--panel2:#eef2f7;--line:#d0d7de;
+      --fg:#1f2328;--dim:#57606a;--code:#f0f3f6;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);color:var(--fg)}
+  .wrap{max-width:1040px;margin:0 auto;padding:2.5rem 1.25rem 5rem}
+  h1{font-size:2rem;margin:0 0 .25rem;letter-spacing:-.02em}
+  h2{font-size:1.35rem;margin:2.75rem 0 .75rem;padding-bottom:.35rem;border-bottom:1px solid var(--line)}
+  h3{font-size:1.05rem;margin:1.5rem 0 .5rem;color:var(--acc)}
+  .lede{color:var(--dim);font-size:1.05rem;max-width:74ch}
+  a{color:var(--acc)}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:.86em;background:var(--code);
+    padding:.12em .4em;border-radius:4px;border:1px solid var(--line)}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:1rem;
+    overflow-x:auto;font-family:ui-monospace,Menlo,monospace;font-size:.82rem;line-height:1.5}
+  pre code{background:none;border:none;padding:0}
+  table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.85rem}
+  th,td{border:1px solid var(--line);padding:.5rem .65rem;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  td.mono,th.mono{font-family:ui-monospace,Menlo,monospace;font-size:.9em;white-space:nowrap}
+  .note{background:var(--panel2);border-left:3px solid var(--acc);border-radius:0 8px 8px 0;
+    padding:.8rem 1rem;margin:1.2rem 0;font-size:.92rem}
+  .tag{display:inline-block;font-size:.72rem;font-weight:600;padding:.15em .55em;border-radius:999px;
+    text-transform:uppercase;letter-spacing:.04em;vertical-align:middle}
+  .t-enc{background:color-mix(in srgb,var(--enc) 22%,transparent);color:var(--enc)}
+  .t-dec{background:color-mix(in srgb,var(--dec) 22%,transparent);color:var(--dec)}
+  .t-chan{background:color-mix(in srgb,var(--chan) 22%,transparent);color:var(--chan)}
+  .t-af{background:color-mix(in srgb,var(--af) 26%,transparent);color:var(--af)}
+  .svgbox{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;margin:1.25rem 0;padding:.5rem}
+  .statrow{display:flex;flex-wrap:wrap;gap:.75rem;margin:1rem 0}
+  .stat{flex:1 1 150px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.85rem 1rem}
+  .stat .v{font-family:ui-monospace,Menlo,monospace;font-size:1.35rem;font-weight:700;color:var(--acc)}
+  .stat .k{color:var(--dim);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+
+  /* filmstrip */
+  .film{display:flex;gap:0;overflow-x:auto;padding:1rem .25rem 1.5rem;margin:1rem 0;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;scroll-snap-type:x proximity}
+  .frame{flex:0 0 auto;width:132px;display:flex;flex-direction:column;align-items:center;
+    padding:0 .35rem;scroll-snap-align:center;position:relative}
+  .frame .thumb{width:104px;height:104px;display:flex;align-items:center;justify-content:center}
+  .frame img{max-width:104px;max-height:104px;image-rendering:pixelated;border-radius:6px;
+    border:1px solid var(--line);background:var(--bg)}
+  .frame .lab{font-size:.68rem;font-weight:600;text-align:center;margin:.5rem 0 .15rem;line-height:1.25;min-height:2.4em}
+  .frame .shape{font-family:ui-monospace,Menlo,monospace;font-size:.68rem;color:var(--acc);text-align:center}
+  .frame .note{font-size:.62rem;color:var(--dim);text-align:center;margin-top:.2rem;line-height:1.3}
+  .frame .chev{position:absolute;right:-7px;top:44px;color:var(--dim);font-size:1rem;z-index:2}
+  .frame.enc .lab{color:var(--enc)} .frame.chan .lab{color:var(--chan)} .frame.dec .lab{color:var(--dec)}
+  .frame.io .lab{color:var(--fg)}
+  .legend{display:flex;gap:1.25rem;flex-wrap:wrap;font-size:.75rem;color:var(--dim);margin:.25rem 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:.35rem}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .graphs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1rem 0}
+  .graph{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.85rem;overflow:hidden}
+  .graph h4{margin:0 0 .5rem;font-size:.85rem;color:var(--acc)}
+  .graph img{width:100%;border-radius:6px;background:#fff;display:block}
+  .graph p{font-size:.76rem;color:var(--dim);margin:.55rem 0 0;line-height:1.4}
+  .foot{color:var(--dim);font-size:.85rem;margin-top:3rem;border-top:1px solid var(--line);padding-top:1rem}
+  ul{padding-left:1.2rem} li{margin:.25rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>ADJSCC — Model Architecture</h1>
+<p class="lede">
+  The complete convolutional autoencoder from
+  <a href="https://arxiv.org/abs/2012.00533">arXiv:2012.00533</a>, layer by layer, with a
+  <strong>real CIFAR image traced through every stage</strong> — captured live from the trained
+  <code id="Ctag">C=16</code> checkpoint. See <a href="../index.html">index.html</a> for the interactive SNR explorer.
+</p>
+
+<div class="statrow" id="stats"></div>
+
+<h2>The whole network at a glance</h2>
+<p>
+  Two mirrored CNNs with a noisy channel wedged between them. The <span class="tag t-enc">encoder</span> shrinks
+  space and grows abstraction (3 colours → 16 learned feature channels); the
+  <span class="tag t-chan">channel</span> normalizes power and adds noise; the
+  <span class="tag t-dec">decoder</span> reverses the encoder to rebuild pixels. Every conv/deconv is followed
+  by <code>PReLU</code> and an <span class="tag t-af">AF</span> module that injects the SNR.
+</p>
+
+<!-- volume schematic -->
+<svg class="svgbox" viewBox="0 0 1000 260" role="img" aria-label="Encoder-channel-decoder volume diagram">
+  <style>
+    .vol{stroke-width:1.5}
+    .ve{fill:color-mix(in srgb,var(--enc) 30%,var(--panel));stroke:var(--enc)}
+    .vd{fill:color-mix(in srgb,var(--dec) 30%,var(--panel));stroke:var(--dec)}
+    .vc{fill:color-mix(in srgb,var(--chan) 32%,var(--panel));stroke:var(--chan)}
+    .sh{fill:var(--dim);font:9px ui-monospace,Menlo,monospace;text-anchor:middle}
+    .cap{fill:var(--fg);font:10px -apple-system,sans-serif;text-anchor:middle;font-weight:600}
+    .flow{stroke:var(--dim);stroke-width:1.4;fill:none;marker-end:url(#a2)}
+  </style>
+  <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L6,3 L0,6 Z" fill="var(--dim)"/></marker></defs>
+
+  <!-- helper volumes: x, y-center, w(spatial), depth(channels visual), class -->
+  <!-- input -->
+  <rect class="vol ve" x="20" y="70" width="70" height="70" rx="2"/>
+  <text class="cap" x="55" y="60">image</text><text class="sh" x="55" y="158">3×32×32</text>
+
+  <rect class="vol ve" x="150" y="82" width="46" height="46" rx="2"/>
+  <text class="sh" x="173" y="146">256×16²</text>
+  <rect class="vol ve" x="250" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="262" y="146">256×8²</text>
+  <rect class="vol ve" x="322" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="334" y="146">256×8²</text>
+  <rect class="vol ve" x="394" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="406" y="146">256×8²</text>
+
+  <!-- codeword -->
+  <rect class="vol vc" x="470" y="94" width="24" height="24" rx="2"/>
+  <text class="cap" x="482" y="84">code</text><text class="sh" x="482" y="146">16×8²</text>
+
+  <!-- channel -->
+  <rect class="vol vc" x="524" y="94" width="24" height="24" rx="2"/>
+  <text class="cap" x="536" y="84">+noise</text><text class="sh" x="536" y="146">16×8²</text>
+
+  <rect class="vol vd" x="586" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="598" y="146">256×8²</text>
+  <rect class="vol vd" x="658" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="670" y="146">256×8²</text>
+  <rect class="vol vd" x="730" y="94" width="24" height="24" rx="2"/>
+  <text class="sh" x="742" y="146">256×8²</text>
+  <rect class="vol vd" x="802" y="82" width="46" height="46" rx="2"/>
+  <text class="sh" x="825" y="146">256×16²</text>
+  <rect class="vol vd" x="900" y="70" width="70" height="70" rx="2"/>
+  <text class="cap" x="935" y="60">image ĥ</text><text class="sh" x="935" y="158">3×32×32</text>
+
+  <path class="flow" d="M92,105 L148,105"/>
+  <path class="flow" d="M198,105 L248,105"/>
+  <path class="flow" d="M276,106 L320,106"/>
+  <path class="flow" d="M420,106 L468,106"/>
+  <path class="flow" d="M496,106 L522,106"/>
+  <path class="flow" d="M550,106 L584,106"/>
+  <path class="flow" d="M684,106 L728,106"/>
+  <path class="flow" d="M756,106 L800,106"/>
+  <path class="flow" d="M850,105 L898,105"/>
+
+  <text class="cap" x="270" y="205" fill="var(--enc)">ENCODER · 5 conv, space ↓ abstraction ↑</text>
+  <text class="cap" x="530" y="220" fill="var(--chan)">CHANNEL</text>
+  <text class="cap" x="720" y="205" fill="var(--dec)">DECODER · 5 deconv, space ↑ back to pixels</text>
+</svg>
+
+<h2>One real image through every layer</h2>
+<p>
+  A single CIFAR image captured at each stage of the trained model
+  (<code id="snrtag">SNR=10 dB</code>). Intermediate tiles are the <strong>mean across that layer’s
+  channels</strong> (coolwarm = signed activation); the codeword and received frames show all 16 channels;
+  the tile’s pixel size tracks the true spatial resolution, so you can watch <code>32→16→8 … 8→16→32</code>.
+  Scroll the strip →
+</p>
+<div class="legend">
+  <span><i class="dot" style="background:var(--enc)"></i>encoder</span>
+  <span><i class="dot" style="background:var(--chan)"></i>channel</span>
+  <span><i class="dot" style="background:var(--dec)"></i>decoder</span>
+  <span><i class="dot" style="background:linear-gradient(90deg,#3b4cc0,#f2f2f2,#b40426)"></i>− … 0 … + activation</span>
+</div>
+<div class="film" id="film"></div>
+<p class="note" id="psnrnote"></p>
+
+<h2><span class="tag t-enc">Encoder</span> — 5 conv layers</h2>
+<pre><code>x : (B, 3, 32, 32)
+Conv2d(3,   256, k5, s2, p2) → PReLU → AF   # 32→16
+Conv2d(256, 256, k5, s2, p2) → PReLU → AF   # 16→8
+Conv2d(256, 256, k5, s1, p2) → PReLU → AF   # 8
+Conv2d(256, 256, k5, s1, p2) → PReLU → AF   # 8
+Conv2d(256, 16,  k5, s1, p2) → PReLU → AF   # 8, C=16 channels
+→ (B, 16, 8, 8)   # the codeword</code></pre>
+<table>
+  <thead><tr><th>Layer</th><th class="mono">in→out ch</th><th class="mono">kernel/stride</th><th class="mono">spatial</th><th>what changes</th></tr></thead>
+  <tbody>
+    <tr><td>Conv1</td><td class="mono">3 → 256</td><td class="mono">5×5 / 2</td><td class="mono">32→16</td><td>lift to 256 features, halve space</td></tr>
+    <tr><td>Conv2</td><td class="mono">256 → 256</td><td class="mono">5×5 / 2</td><td class="mono">16→8</td><td>halve space again</td></tr>
+    <tr><td>Conv3</td><td class="mono">256 → 256</td><td class="mono">5×5 / 1</td><td class="mono">8</td><td>refine</td></tr>
+    <tr><td>Conv4</td><td class="mono">256 → 256</td><td class="mono">5×5 / 1</td><td class="mono">8</td><td>refine</td></tr>
+    <tr><td>Conv5</td><td class="mono">256 → 16</td><td class="mono">5×5 / 1</td><td class="mono">8</td><td>squeeze to transmit budget</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="tag t-chan">Channel block</span> — no learned weights</h2>
+<pre><code>z = flatten(code)                    # (B, 16·8·8) = (B, 1024)
+z = z · sqrt(k / Σz²)                # power-normalize: mean power = 1
+# read as 512 complex symbols (first 512 real, next 512 imag)
+σ² = 1 / 10^(SNR/10);  y = z + N(0, σ²)      # AWGN
+y → reshape (B, 16, 8, 8) → decoder</code></pre>
+<p>
+  Pure math, fully differentiable — gradients flow back through the noise into the encoder, so the encoder
+  learns a noise-robust code end to end. This is the only stochastic step.
+</p>
+
+<h2><span class="tag t-dec">Decoder</span> — 5 transposed-conv layers (mirror)</h2>
+<pre><code>y : (B, 16, 8, 8)
+ConvT2d(16,  256, k5, s1, p2)               → PReLU → AF   # 8
+ConvT2d(256, 256, k5, s1, p2)               → PReLU → AF   # 8
+ConvT2d(256, 256, k5, s1, p2)               → PReLU → AF   # 8
+ConvT2d(256, 256, k5, s2, p2, out_pad=1)    → PReLU → AF   # 8→16
+ConvT2d(256, 3,   k5, s2, p2, out_pad=1)    → sigmoid       # 16→32
+→ (B, 3, 32, 32)   # reconstruction in [0,1]</code></pre>
+<p>
+  Same shapes as the encoder, run backwards: channels go <code>16→256→…→3</code>, space goes
+  <code>8→16→32</code>. Final <code>sigmoid</code> clamps pixels into <code>[0,1]</code>. Note the decoder’s AF
+  modules also receive the SNR — adaptation happens on the receive side too.
+</p>
+
+<h2><span class="tag t-af">AF module</span> — the SNR-conditioned gate (used 9×)</h2>
+<p>
+  Inserted after every PReLU (5 in the encoder, 4 in the decoder). A squeeze-and-excitation block that mixes
+  the feature summary with the channel SNR to produce a per-channel gate.
+</p>
+<svg class="svgbox" viewBox="0 0 720 190" role="img" aria-label="AF module">
+  <style>
+    .b{fill:var(--panel2);stroke:var(--line);stroke-width:1.5}
+    .tx{fill:var(--fg);font:12px ui-monospace,Menlo,monospace}
+    .td{fill:var(--dim);font:10px ui-monospace,Menlo,monospace}
+    .ar{stroke:var(--dim);stroke-width:1.5;fill:none;marker-end:url(#h)}
+    .hl{fill:color-mix(in srgb,var(--af) 22%,transparent);stroke:var(--af);stroke-width:1.5}
+  </style>
+  <defs><marker id="h" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="var(--dim)"/></marker></defs>
+  <rect class="b" x="10" y="62" width="86" height="42" rx="6"/><text class="tx" x="28" y="80">x</text><text class="td" x="16" y="96">B·Ch·H·W</text>
+  <rect class="b" x="132" y="62" width="104" height="42" rx="6"/><text class="tx" x="142" y="80">avg-pool</text><text class="td" x="142" y="96">→ Ch</text>
+  <rect class="hl" x="132" y="118" width="104" height="36" rx="6"/><text class="tx" x="142" y="141">concat SNR</text>
+  <rect class="b" x="286" y="78" width="86" height="42" rx="6"/><text class="tx" x="298" y="97">FC→ReLU</text>
+  <rect class="b" x="410" y="78" width="108" height="42" rx="6"/><text class="tx" x="420" y="97">FC→sigmoid</text><text class="td" x="430" y="112">gate∈[0,1]</text>
+  <rect class="b" x="566" y="62" width="120" height="42" rx="6"/><text class="tx" x="596" y="80">x · gate</text>
+  <path class="ar" d="M96,83 L130,83"/><path class="ar" d="M184,104 L184,116"/>
+  <path class="ar" d="M236,100 L284,100"/><path class="ar" d="M372,100 L408,100"/>
+  <path class="ar" d="M518,100 L550,100 L550,83 L564,83"/>
+  <path class="ar" d="M53,104 C53,168 540,168 564,104" stroke-dasharray="4 3"/>
+</svg>
+<pre><code>ctx  = x.mean(dim=(H,W))            # (B, Ch)
+gate = sigmoid(fc2(relu(fc1(cat([ctx, snr])))))   # (B, Ch), each in [0,1]
+out  = x * gate[:, :, None, None]  # rescale each channel</code></pre>
+<div class="note">
+  Because the SNR is an <em>input</em> to all 9 gates, one weight set spans the whole 0–20 dB range — no
+  per-SNR retraining. That single idea is the paper’s contribution; see it move on
+  <a href="../index.html">the interactive page</a>.
+</div>
+
+<h2>End-to-end training</h2>
+<pre><code>for each batch:
+    snr  = uniform(0, 20)                 # random channel each step (ADJSCC)
+    ĥ    = model(image, snr)             # enc → power-norm → AWGN → dec
+    loss = MSE(ĥ, image)                 # pixel reconstruction only
+    loss.backward()                       # grads flow through the noisy channel
+</code></pre>
+<ul>
+  <li>No JPEG, no LDPC, no separate source/channel stages — one loss, learned jointly.</li>
+  <li>SNR sampled per step so the AF gates learn the full range; the baseline fixes it and drops AF.</li>
+  <li>Reported metrics: <strong>PSNR</strong> and single-scale <strong>SSIM</strong>.</li>
+</ul>
+
+<h2>Training &amp; evaluation curves</h2>
+<p>
+  Logged to Weights &amp; Biases across three runs at <code>R=1/6</code>, AWGN:
+  <span style="color:#5b8cff;font-weight:600">ADJSCC</span> (one model, SNR 0–20 dB) vs two fixed-SNR
+  <span style="color:#8957e5;font-weight:600">DeepJSCC baselines</span> trained at
+  <span style="color:#8957e5">19 dB</span> and <span style="color:#3fb950;font-weight:600">1 dB</span>.
+  The test-PSNR plots are the mismatch story: a baseline is great at its own SNR, weak elsewhere; ADJSCC holds
+  up everywhere.
+</p>
+<div class="graphs" id="graphs"></div>
+
+<p class="foot">
+  Filmstrip + stats baked live from <code>ckpt/adjscc_r16.pt</code> via <code>scripts/arch_page.py</code>.
+  Architecture source: <code>adjscc/models.py</code>, <code>adjscc/channel.py</code>. arXiv:2012.00533, CIFAR-10 / AWGN.
+</p>
+
+</div>
+
+<script>
+const DATA = __DATA__;
+const $ = id => document.getElementById(id);
+$('Ctag').textContent = 'C=' + DATA.C;
+$('snrtag').textContent = 'SNR=' + DATA.snr + ' dB';
+
+const P = DATA.params, fmt = n => (n/1e6).toFixed(2) + 'M';
+$('stats').innerHTML = [
+  ['Total params', fmt(P.total)],
+  ['Encoder', fmt(P.enc)],
+  ['Decoder', fmt(P.dec)],
+  ['AF gates', fmt(P.af)],
+  ['Bandwidth R', '1/6'],
+  ['PSNR @' + DATA.snr + 'dB', DATA.trained_psnr + ' dB'],
+].map(([k,v])=>`<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+
+const cls = (i,n)=> i===0||i===n-1 ? 'io' : (i<=5?'enc':(i===6?'chan':'dec'));
+$('film').innerHTML = DATA.film.map((f,i,arr)=>`
+  <div class="frame ${cls(i,arr.length)}">
+    <div class="thumb"><img src="${f.img}" alt="${f.label}"></div>
+    <div class="lab">${f.label}</div>
+    <div class="shape">${f.shape}</div>
+    <div class="note">${f.note}</div>
+    ${i<arr.length-1?'<div class="chev">›</div>':''}
+  </div>`).join('');
+
+$('graphs').innerHTML = (DATA.graphs||[]).map(g=>`
+  <div class="graph"><h4>${g.title}</h4>
+    <img src="${g.img}" alt="${g.title}">
+    <p>${g.cap}</p></div>`).join('');
+
+$('psnrnote').textContent =
+  `Traced image reconstructs at ${DATA.trained_psnr} dB PSNR at ${DATA.snr} dB SNR. ` +
+  `Intermediate frames are channel-mean activations; codeword & received frames show all ${DATA.C} channels.`;
+</script>
+</body>
+</html>
