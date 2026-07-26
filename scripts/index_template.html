@@ -160,10 +160,10 @@
     </div>
 
     <div class="vstage">
-      <h4><span class="num">3</span> AF gates · bottleneck layer</h4>
+      <h4><span class="num">3</span> AF gates · last encoder AF module</h4>
       <canvas id="vGate" height="150"></canvas>
-      <p class="cap">Per-channel attention weights (0–1) the SNR produces for the 16 code channels.
-        Watch them rebalance as you drag — this is how one model adapts.</p>
+      <p class="cap">Per-channel attention weights (0–1) the SNR produces — first 32 of the 256 channels
+        feeding the projection to <code>C</code>. Watch them rebalance as you drag: this is how one model adapts.</p>
     </div>
 
     <div class="vstage">
@@ -196,37 +196,38 @@ ratio_to_C(R) = round(R · 96)     # R = 1/6  →  C = 16</code></pre>
 
 <h2><span class="tag t-enc">Encoder</span> pixels → channel symbols</h2>
 <p>
-  Five convolutional layers. First two stride-2 blocks shrink <code>32→16→8</code> spatially; the last
-  three keep <code>8×8</code> and squeeze channel depth down to <code>C</code>. Every layer is
-  <code>Conv → PReLU → AF</code>.
+  Five <strong>FL (feature learning) modules</strong>. First two stride-2 blocks shrink <code>32→16→8</code>
+  spatially; the last three keep <code>8×8</code> and squeeze channel depth down to <code>C</code>. Each FL
+  module is <code>Conv → GDN → PReLU</code>, and an AF module follows every FL module <em>except the last</em>.
 </p>
 <table>
   <thead><tr><th>Layer</th><th class="mono">kernel / stride</th><th class="mono">out shape</th><th>role</th></tr></thead>
   <tbody>
-    <tr><td>Conv 1</td><td class="mono">5×5 / s2</td><td class="mono">F × 16 × 16</td><td>downsample (panel 1)</td></tr>
-    <tr><td>Conv 2</td><td class="mono">5×5 / s2</td><td class="mono">F × 8 × 8</td><td>downsample</td></tr>
-    <tr><td>Conv 3</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine</td></tr>
-    <tr><td>Conv 4</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine</td></tr>
-    <tr><td>Conv 5</td><td class="mono">5×5 / s1</td><td class="mono">C × 8 × 8</td><td>project to budget (panel 2)</td></tr>
+    <tr><td>FL 1 + AF</td><td class="mono">9×9 / s2</td><td class="mono">F × 16 × 16</td><td>downsample (panel 1)</td></tr>
+    <tr><td>FL 2 + AF</td><td class="mono">5×5 / s2</td><td class="mono">F × 8 × 8</td><td>downsample</td></tr>
+    <tr><td>FL 3 + AF</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine</td></tr>
+    <tr><td>FL 4 + AF</td><td class="mono">5×5 / s1</td><td class="mono">F × 8 × 8</td><td>refine (panel 3)</td></tr>
+    <tr><td>FL 5</td><td class="mono">5×5 / s1</td><td class="mono">C × 8 × 8</td><td>project to budget, no PReLU/AF (panel 2)</td></tr>
   </tbody>
 </table>
 <p>
-  <code>F</code> is net width (default <code>256</code>, <code>--filters</code>). <code>PReLU</code> is a
-  leaky-ReLU whose negative slope is <em>learned</em> per channel. After each activation an AF module
-  re-weights the channels using the current SNR.
+  <code>F</code> is net width (<code>256</code> in the paper, <code>--filters</code>). <code>GDN</code>
+  (generalized divisive normalization) divides each channel by <code>sqrt(β + Γ·x²)</code> — a learned,
+  invertible normalizer built for image coding. <code>PReLU</code> is a leaky-ReLU whose negative slope is
+  <em>learned</em> per channel. After each activation an AF module re-weights the channels using the current SNR.
 </p>
 
 <h2><span class="tag t-chan">Power normalization + AWGN channel</span></h2>
 <p>
-  The <code>C×8×8</code> map is flattened to a vector <code>z</code> of length <code>C·64</code> and
-  <strong>power-normalized</strong> so average power per element is exactly 1 — enforcing the transmit
-  power budget the SNR is defined against:
+  The <code>C×8×8</code> map is flattened to a vector <code>z</code> of length <code>C·64</code>, read as
+  <code>k = C·32</code> complex symbols (first half real, second half imag), and
+  <strong>power-normalized</strong> so average power per <em>complex symbol</em> is exactly 1 — the paper's
+  <code>(1/k)·E(zz*) ≤ 1</code>, the budget the SNR is defined against:
 </p>
-<pre><code>scale = sqrt( k / (Σ zᵢ²) )        # k = C·64
-z_norm = z · scale                 # mean(z_norm²) = 1</code></pre>
+<pre><code>scale = sqrt( k / (Σ zᵢ²) )        # k = C·32 complex symbols
+z_norm = z · scale                 # mean(|z_c|²) = 1, so mean(z_norm²) = ½</code></pre>
 <p>
-  The vector is read as complex symbols (first half real, second half imag). The <strong>AWGN channel</strong>
-  adds Gaussian noise set by the SNR in dB:
+  The <strong>AWGN channel</strong> adds Gaussian noise set by the SNR in dB:
 </p>
 <pre><code>σ² = 1 / 10^(SNR_dB / 10)           # noise power at unit signal power
 per-component std = σ / √2          # split across real & imag
@@ -240,9 +241,10 @@ y = z_norm + N(0, σ²)</code></pre>
 
 <h2><span class="tag t-dec">Decoder</span> received symbols → image</h2>
 <p>
-  Mirror of the encoder: five transposed convolutions. Three keep <code>8×8</code>, then two stride-2 blocks
-  upsample <code>8→16→32</code>. Layers 1–4 are <code>ConvT → PReLU → AF</code>; the final layer uses
-  <strong>sigmoid</strong> to bound outputs into <code>[0,1]</code> (panel 5).
+  Mirror of the encoder: five FL modules built on transposed convolutions with <strong>IGDN</strong> (inverse
+  GDN, <code>× sqrt(β + Γ·x²)</code>). Three keep <code>8×8</code>, then two stride-2 blocks upsample
+  <code>8→16→32</code> (the last with a 9×9 kernel). Modules 1–4 are <code>ConvT → IGDN → PReLU → AF</code>;
+  the final one uses <strong>sigmoid</strong> and no AF, bounding outputs into <code>[0,1]</code> (panel 5).
 </p>
 
 <h2><span class="tag t-af">AF module</span> — how SNR steers the network</h2>
@@ -269,7 +271,7 @@ y = z_norm + N(0, σ²)</code></pre>
   <rect class="hl" x="140" y="130" width="110" height="40" rx="6"/>
   <text class="tx" x="150" y="155">concat SNR</text>
   <rect class="b" x="300" y="88" width="90" height="46" rx="6"/>
-  <text class="tx" x="312" y="108">FC → ReLU</text><text class="td" x="330" y="124">Ch</text>
+  <text class="tx" x="312" y="108">FC → ReLU</text><text class="td" x="326" y="124">Ch/16</text>
   <rect class="b" x="430" y="88" width="110" height="46" rx="6"/>
   <text class="tx" x="440" y="108">FC → sigmoid</text><text class="td" x="470" y="124">gate s∈[0,1]</text>
   <rect class="b" x="590" y="70" width="120" height="46" rx="6"/>
@@ -284,8 +286,8 @@ y = z_norm + N(0, σ²)</code></pre>
 
 <pre><code>ctx = x.mean(dim=(H,W))              # global avg pool  → (B, Ch)
 s   = concat([ctx, snr])            # append SNR       → (B, Ch+1)
-s   = relu( fc1(s) )                # Linear(Ch+1 → Ch)
-s   = sigmoid( fc2(s) )            # Linear(Ch → Ch)  → gate in [0,1]
+s   = relu( fc1(s) )                # Linear(Ch+1 → Ch/16)  bottleneck
+s   = sigmoid( fc2(s) )            # Linear(Ch/16 → Ch)  → gate in [0,1]
 out = x * s[:, :, None, None]       # per-channel rescale</code></pre>
 
 <div class="grid2">

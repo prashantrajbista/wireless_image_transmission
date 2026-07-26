@@ -218,7 +218,7 @@ ConvT2d(256, 3,   k5, s2, p2, out_pad=1)    → sigmoid       # 16→32
   modules also receive the SNR — adaptation happens on the receive side too.
 </p>
 
-<h2><span class="tag t-af">AF module</span> — the SNR-conditioned gate (used 9×)</h2>
+<h2><span class="tag t-af">AF module</span> — the SNR-conditioned gate (used 8×)</h2>
 <p>
   Inserted after every PReLU (5 in the encoder, 4 in the decoder). A squeeze-and-excitation block that mixes
   the feature summary with the channel SNR to produce a per-channel gate.
@@ -246,9 +246,10 @@ ConvT2d(256, 3,   k5, s2, p2, out_pad=1)    → sigmoid       # 16→32
 </svg>
 <pre><code>ctx  = x.mean(dim=(H,W))            # (B, Ch)
 gate = sigmoid(fc2(relu(fc1(cat([ctx, snr])))))   # (B, Ch), each in [0,1]
+                                                  # fc1: Ch+1 → Ch/16, fc2: Ch/16 → Ch
 out  = x * gate[:, :, None, None]  # rescale each channel</code></pre>
 <div class="note">
-  Because the SNR is an <em>input</em> to all 9 gates, one weight set spans the whole 0–20 dB range — no
+  Because the SNR is an <em>input</em> to all 8 gates, one weight set spans the whole 0–20 dB range — no
   per-SNR retraining. That single idea is the paper’s contribution; see it move on
   <a href="../index.html">the interactive page</a>.
 </div>

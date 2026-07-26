@@ -12,6 +12,9 @@ import argparse
 import base64
 import io
 import json
+import sys
+from pathlib import Path
+
 import numpy as np
 import torch
 from PIL import Image
@@ -19,10 +22,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root on path
 from adjscc.models import DeepJSCC
 
 N_IMAGES = 4          # test images to bake (keeps file small)
 N_ENC1 = 16           # how many of layer-1's 256 channels to show
+N_GATES = 32          # how many AF gates to plot (of 256)
 
 
 def _png(arr_uint8, scale):
@@ -81,8 +86,11 @@ def build(ckpt_path, npz_path, n_points=180):
             caps[name] = (inp[0].detach(), inp[1].detach())
         return f
 
-    for i, af in enumerate(model.enc.afs):
+    for i, af in enumerate(model.enc.afs):            # 4 AF modules (none on FL5)
         af.register_forward_pre_hook(pre(f"af{i}"))
+    # the codeword itself: output of the last encoder FL module
+    model.enc.fls[4].register_forward_hook(
+        lambda mod, inp, out: caps.__setitem__("code", out.detach()))
 
     def af_gate(mod, x, snr):
         ctx = x.mean(dim=(2, 3))
@@ -105,8 +113,9 @@ def build(ckpt_path, npz_path, n_points=180):
             with torch.no_grad():
                 model(img_t, float(snr))                 # populates caps
             enc1 = caps["af0"][0][0][:N_ENC1].numpy()    # (16,16,16) layer-1 feats
-            code = caps["af4"][0][0].numpy()             # (16,8,8) bottleneck code
-            gate = af_gate(model.enc.afs[4], *caps["af4"]).tolist()  # 16 code gates
+            code = caps["code"][0].numpy()               # (16,8,8) bottleneck code
+            # last encoder AF module: 256 gates, show the first N_GATES
+            gate = af_gate(model.enc.afs[3], *caps["af3"])[:N_GATES].tolist()
             gate1 = af_gate(model.enc.afs[0], *caps["af0"]).tolist()  # 256 -> summarize
             sym = symbols[s_idx, i]
             idx = np.linspace(0, half - 1, min(n_points, half)).astype(int)

@@ -11,6 +11,9 @@ import argparse
 import base64
 import io
 import json
+import sys
+from pathlib import Path
+
 import numpy as np
 import torch
 from PIL import Image
@@ -18,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # repo root on path
 from adjscc.models import DeepJSCC
 from adjscc.channel import power_normalize, awgn
 
@@ -73,10 +77,10 @@ def build(ckpt_path, npz_path):
     m.eval()
 
     cap = {}
-    for i, af in enumerate(m.enc.afs):
-        af.register_forward_pre_hook(lambda mod, inp, k=f"e{i}": cap.__setitem__(k, inp[0].detach()))
-    for i, af in enumerate(m.dec.afs):
-        af.register_forward_pre_hook(lambda mod, inp, k=f"d{i}": cap.__setitem__(k, inp[0].detach()))
+    for i, fl in enumerate(m.enc.fls):
+        fl.register_forward_hook(lambda mod, inp, out, k=f"e{i}": cap.__setitem__(k, out.detach()))
+    for i, fl in enumerate(m.dec.fls):
+        fl.register_forward_hook(lambda mod, inp, out, k=f"d{i}": cap.__setitem__(k, out.detach()))
 
     d = np.load(npz_path)
     x = torch.tensor(d["inputs"][IMG:IMG + 1])
@@ -101,17 +105,17 @@ def build(ckpt_path, npz_path):
 
     film = [
         stage("Input image", "3 × 32 × 32", img_b64(d["inputs"][IMG]), "RGB pixels, the source"),
-        stage("Conv1 · s2 + PReLU + AF", "256 × 16 × 16", mean_tile(e["e0"], 14), "3→256 ch, 32→16 spatial"),
-        stage("Conv2 · s2 + PReLU + AF", "256 × 8 × 8", mean_tile(e["e1"], 24), "16→8 spatial"),
-        stage("Conv3 · s1 + PReLU + AF", "256 × 8 × 8", mean_tile(e["e2"], 24), "refine"),
-        stage("Conv4 · s1 + PReLU + AF", "256 × 8 × 8", mean_tile(e["e3"], 24), "refine"),
-        stage("Conv5 · s1 + PReLU + AF", "16 × 8 × 8", grid_tile(code, 4), "256→16: the codeword (all 16 shown)"),
+        stage("FL1 · 9×9 s2 + GDN + PReLU + AF", "256 × 16 × 16", mean_tile(e["e0"], 14), "3→256 ch, 32→16 spatial"),
+        stage("FL2 · 5×5 s2 + GDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["e1"], 24), "16→8 spatial"),
+        stage("FL3 · 5×5 s1 + GDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["e2"], 24), "refine"),
+        stage("FL4 · 5×5 s1 + GDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["e3"], 24), "refine"),
+        stage("FL5 · 5×5 s1 + GDN", "16 × 8 × 8", grid_tile(code, 4), "256→16: the codeword (no AF here)"),
         stage("Power-norm + AWGN channel", "16 × 8 × 8", grid_tile(recv, 4), f"noisy symbols the decoder gets @ {SNR:g} dB"),
-        stage("ConvT1 · s1 + PReLU + AF", "256 × 8 × 8", mean_tile(e["d0"], 24), "16→256 ch"),
-        stage("ConvT2 · s1 + PReLU + AF", "256 × 8 × 8", mean_tile(e["d1"], 24), "refine"),
-        stage("ConvT3 · s1 + PReLU + AF", "256 × 8 × 8", mean_tile(e["d2"], 24), "refine"),
-        stage("ConvT4 · s2 + PReLU + AF", "256 × 16 × 16", mean_tile(e["d3"], 14), "8→16 spatial"),
-        stage("ConvT5 · s2 + sigmoid", "3 × 32 × 32", img_b64(out[0].numpy()), "256→3 ch, 16→32: reconstruction"),
+        stage("FL1 · 5×5 s1 + IGDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["d0"], 24), "16→256 ch"),
+        stage("FL2 · 5×5 s1 + IGDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["d1"], 24), "refine"),
+        stage("FL3 · 5×5 s1 + IGDN + PReLU + AF", "256 × 8 × 8", mean_tile(e["d2"], 24), "refine"),
+        stage("FL4 · 5×5 s2 + IGDN + PReLU + AF", "256 × 16 × 16", mean_tile(e["d3"], 14), "8→16 spatial"),
+        stage("FL5 · 9×9 s2 + IGDN + sigmoid", "3 × 32 × 32", img_b64(out[0].numpy()), "256→3 ch, 16→32: reconstruction"),
     ]
     return {"snr": SNR, "C": C, "F": F, "params": params, "film": film,
             "trained_psnr": round(ck.get("psnr", 0.0), 2),
