@@ -8,6 +8,15 @@ A neural autoencoder transmits an image straight over a noisy channel (no JPEG +
 LDPC). **Attention Feature (AF)** modules inject the SNR into the net so **one**
 model handles the whole SNR range. See `docs/PLANO.md` and `docs/CODE_PLANO.md`.
 
+**Pretrained weights, graphs and eval CSVs:**
+[huggingface.co/prashantrajbista/adjscc-cifar10](https://huggingface.co/prashantrajbista/adjscc-cifar10)
+— the three checkpoints below, plus the model card's paper-vs-repo deviation table.
+
+```bash
+uv run --with huggingface_hub hf download prashantrajbista/adjscc-cifar10 \
+    --include "*.pt" --local-dir ckpt
+```
+
 ## Layout
 
 ```
