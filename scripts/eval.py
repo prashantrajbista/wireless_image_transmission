@@ -18,7 +18,9 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", required=True)
     p.add_argument("--attention", action="store_true")
-    p.add_argument("--snr-list", default="0,2,4,6,8,10,12,14,16,18,20")
+    p.add_argument("--snr-list", default=",".join(str(i) for i in range(21)))
+    p.add_argument("--repeats", type=int, default=10,
+                   help="transmissions per test image (paper uses 10)")
     p.add_argument("--batch", type=int, default=256)
     p.add_argument("--out", default="results/eval.csv")
     p.add_argument("--dump-samples", type=int, default=0)
@@ -39,14 +41,15 @@ def main():
         w = csv.writer(f)
         w.writerow(["snr", "psnr", "ssim", "model", "ratio"])
         for snr in snr_list:
-            ps, ss = sweep(model, test_loader, snr, device)
+            ps, ss = sweep(model, test_loader, snr, device, args.repeats)
             w.writerow([snr, f"{ps:.4f}", ss, tag, f"{ratio:.4f}"])
             print(f"SNR {snr:5.1f}  PSNR {ps:6.2f}  SSIM {ss}")
     print(f"wrote {args.out}")
 
     if args.dump_samples:
         os.makedirs("results", exist_ok=True)
-        dump_samples(model, test_loader, snr_list, device,
+        # every other SNR is plenty for the viz pages (keeps the baked HTML small)
+        dump_samples(model, test_loader, snr_list[::2], device,
                      args.dump_samples, f"results/{tag}_samples.npz")
 
 

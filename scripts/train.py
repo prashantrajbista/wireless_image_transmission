@@ -22,8 +22,8 @@ def parse_args():
     p.add_argument("--ratio", type=float, default=1 / 6)
     p.add_argument("--filters", type=int, default=256)
     p.add_argument("--channel", default="awgn")
-    p.add_argument("--epochs", type=int, default=200)
-    p.add_argument("--batch", type=int, default=64)
+    p.add_argument("--epochs", type=int, default=1280)   # paper value
+    p.add_argument("--batch", type=int, default=128)     # paper value
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--out", default="ckpt/model.pt")
     p.add_argument("--no-wandb", action="store_true", help="disable wandb logging")

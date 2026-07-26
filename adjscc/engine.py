@@ -72,12 +72,13 @@ def sample_snr(args, B, device):
 # --------------------------------------------------------------------------- train
 
 @torch.no_grad()
-def eval_psnr(model, loader, snr, device):
+def eval_psnr(model, loader, args, device):
+    """Validation PSNR under the same SNR distribution used for training."""
     model.eval()
     tot, n = 0.0, 0
     for img, _ in loader:
         img = img.to(device)
-        out = model(img, snr)
+        out = model(img, sample_snr(args, img.size(0), device))
         tot += psnr(out, img) * img.size(0)
         n += img.size(0)
     return tot / n
@@ -93,7 +94,6 @@ def train(args):
                      channel=args.channel).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    eval_snr = (args.snr_min + args.snr_max) / 2 if args.attention else args.snr_fixed
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     best = -1e9
 
@@ -112,16 +112,15 @@ def train(args):
             opt.step()
             run += loss.item()
         train_mse = run / len(train_loader)
-        val = eval_psnr(model, test_loader, eval_snr, device)
-        print(f"ep {ep:3d} train_mse {train_mse:.5f} "
-              f"test_psnr@{eval_snr:.0f}dB {val:.2f}")
+        val = eval_psnr(model, test_loader, args, device)
+        print(f"ep {ep:4d} train_mse {train_mse:.5f} test_psnr {val:.2f}")
         if val > best:
             best = val
             torch.save({"state_dict": model.state_dict(), "args": vars(args),
                         "C": C, "psnr": val}, args.out)
         if run_wb is not None:
             run_wb.log({"epoch": ep, "train_mse": train_mse,
-                        f"test_psnr@{eval_snr:g}dB": val, "best_psnr": best})
+                        "test_psnr": val, "best_psnr": best})
     print(f"best test PSNR {best:.2f} -> {args.out}")
     if run_wb is not None:
         run_wb.summary["best_psnr"] = best
@@ -142,18 +141,21 @@ def load_model(ckpt_path, attention, device):
 
 
 @torch.no_grad()
-def sweep(model, loader, snr, device):
+def sweep(model, loader, snr, device, repeats=10):
+    """Test PSNR/SSIM at one SNR. Paper transmits each test image `repeats`
+    times to average out the randomness of the channel noise."""
     ps, ss, n, has_ss = 0.0, 0.0, 0, True
-    for img, _ in loader:
-        img = img.to(device)
-        out = model(img, snr)
-        ps += psnr(out, img) * img.size(0)
-        s = ssim(out, img)
-        if s is None:
-            has_ss = False
-        else:
-            ss += s * img.size(0)
-        n += img.size(0)
+    for _ in range(repeats):
+        for img, _lbl in loader:
+            img = img.to(device)
+            out = model(img, snr)
+            ps += psnr(out, img) * img.size(0)
+            s = ssim(out, img)
+            if s is None:
+                has_ss = False
+            else:
+                ss += s * img.size(0)
+            n += img.size(0)
     return ps / n, (ss / n if has_ss else "")
 
 

@@ -11,11 +11,11 @@ tv.datasets.CIFAR10.url = (
 )
 
 
-def loaders(batch=64, root="./data", workers=4):
-    train_tf = T.Compose([T.RandomHorizontalFlip(), T.ToTensor()])
-    test_tf = T.ToTensor()
-    train = tv.datasets.CIFAR10(root, train=True, download=True, transform=train_tf)
-    test = tv.datasets.CIFAR10(root, train=False, download=True, transform=test_tf)
+def loaders(batch=128, root="./data", workers=4):
+    # No augmentation: the paper trains on the raw 50k images (x/255 only).
+    tf = T.ToTensor()
+    train = tv.datasets.CIFAR10(root, train=True, download=True, transform=tf)
+    test = tv.datasets.CIFAR10(root, train=False, download=True, transform=tf)
     return (
         DataLoader(train, batch, shuffle=True, num_workers=workers, drop_last=True),
         DataLoader(test, batch, shuffle=False, num_workers=workers),
