@@ -1,0 +1,40 @@
+# CIFAR-10 matrix: the paper's Fig. 6 baselines plus both SNR-conditioning
+# mechanisms, so the image and speech results are directly comparable.
+#
+#   uv run python scripts/run_grid.py --config experiments/image_phase3.yaml
+
+defaults:
+  modality: image
+  ratio: 0.16666666666666666   # R = 1/6, C = 16
+  filters: 256
+  epochs: 1280                 # paper value
+  batch: 128
+  optimizer: adam
+  lr: 0.0001
+  val_frac: 0.1
+  seed: 0
+  ckpt_every: 50
+  resume: true
+
+runs:
+  - name: img_af
+    cond: af
+  - name: img_reg
+    cond: reg
+  - name: img_bd1              # the paper's fixed-SNR baselines
+    cond: none
+    snr_fixed: 1.0
+  - name: img_bd7
+    cond: none
+    snr_fixed: 7.0
+  - name: img_bd13
+    cond: none
+    snr_fixed: 13.0
+  - name: img_bd19
+    cond: none
+    snr_fixed: 19.0
+
+eval:
+  snr_list: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+  repeats: 1                   # paper uses 10
+  dump_samples: 8

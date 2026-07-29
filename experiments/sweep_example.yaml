@@ -1,0 +1,55 @@
+# A real wandb sweep -- for rectangular searches, which the phase-3 matrix is not.
+#
+# The six phase-3 arms are a hand-picked list (af/reg train on the uniform SNR
+# range, the BDJSCC arms are mostly fixed-SNR), so a grid over them would generate
+# nonsense combinations. Use experiments/*_phase3.yaml + scripts/run_grid.py for
+# that, and a sweep for questions like "what lr and bandwidth ratio does the AF arm
+# actually want", where every combination is meaningful.
+#
+#   wandb sweep experiments/sweep_example.yaml
+#   wandb agent <entity>/<project>/<sweep_id>
+#
+# No code change is needed: the agent passes --key=value, which scripts/train.py
+# already accepts as CLI flags.
+
+program: scripts/train.py
+method: bayes
+metric:
+  name: best              # best validation SDR/PSNR, set in engine.train's summary
+  goal: maximize
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args}
+
+parameters:
+  modality:
+    value: audio
+  cond:
+    value: af
+  sr:
+    value: 8000
+  epochs:
+    value: 200            # keep sweep runs short; the winner gets the full budget
+  batch:
+    value: 256
+  optimizer:
+    value: rmsprop
+  seed:
+    value: 0
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.005
+  lr_decay:
+    values: [0.995, 0.999, 1.0]
+  ratio:
+    values: [0.125, 0.25, 0.5]
+  filters:
+    values: [128, 256]
+
+early_terminate:
+  type: hyperband
+  min_iter: 20

@@ -1,0 +1,51 @@
+# Phase-3 speech matrix from docs/AUDIO_PLAN.md.
+#
+# Does feature-pooled SNR conditioning (ADJSCC's AF module) beat SNR-only
+# conditioning (ReJSCC's regulating module) on speech? Baselines match ReJSCC
+# section 4.3 so results drop straight into their table.
+#
+#   uv run python scripts/run_grid.py --config experiments/audio_phase3.yaml
+#
+# `defaults` applies to every run; each entry in `runs` overrides it. Anything
+# accepted by engine.DEFAULTS is valid here, and unknown keys are rejected rather
+# than ignored.
+
+defaults:
+  modality: audio
+  ratio: 0.5            # R = C/32, so C=16 -- ReJSCC's speech operating point
+  sr: 8000              # 16000 keeps the whole corpus; see AUDIO_PLAN section 2
+  filters: 256
+  epochs: 2000          # ReJSCC's speech setting
+  batch: 256
+  optimizer: rmsprop
+  lr: 0.001
+  lr_decay: 0.999
+  val_frac: 0.1
+  seed: 0
+  ckpt_every: 50
+  resume: true
+
+# Every arm shares the budget above. Changing epochs/optimizer/sr for one arm and
+# not the others voids the comparison -- that is the whole point of the experiment.
+runs:
+  - name: audio_af            # ADJSCC: pooled features + SNR
+    cond: af
+  - name: audio_reg           # ReJSCC: SNR only
+    cond: reg
+  - name: audio_bd4           # BDJSCC baselines, ReJSCC section 4.3
+    cond: none
+    snr_fixed: 4.0
+  - name: audio_bd7
+    cond: none
+    snr_fixed: 7.0
+  - name: audio_bd13
+    cond: none
+    snr_fixed: 13.0
+  - name: audio_bduni         # BDJSCC trained on the uniform range
+    cond: none
+
+eval:
+  snr_list: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+  repeats: 1                  # paper uses 10; raise once the trend is visible
+  perceptual: true            # adds STOI + PESQ (slow, per-utterance)
+  dump_samples: 4
