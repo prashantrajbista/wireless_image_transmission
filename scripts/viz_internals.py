@@ -74,8 +74,9 @@ def psnr(a, b):
 def build(ckpt_path, npz_path, n_points=180):
     ck = torch.load(ckpt_path, map_location="cpu")
     a = ck["args"]
-    model = DeepJSCC(C=ck["C"], F=a.get("filters", 256), attention=True,
-                     channel=a.get("channel", "awgn"))
+    model = DeepJSCC(C=ck["C"], F=a.get("filters", 256),
+                     cond=a.get("cond", "af"), channel=a.get("channel", "awgn"),
+                     modality=a.get("modality", "image"), norm=a.get("norm"))
     model.load_state_dict(ck["state_dict"])
     model.eval()
 
@@ -86,7 +87,7 @@ def build(ckpt_path, npz_path, n_points=180):
             caps[name] = (inp[0].detach(), inp[1].detach())
         return f
 
-    for i, af in enumerate(model.enc.afs):            # 4 AF modules (none on FL5)
+    for i, af in enumerate(model.enc.gates):            # 4 AF modules (none on FL5)
         af.register_forward_pre_hook(pre(f"af{i}"))
     # the codeword itself: output of the last encoder FL module
     model.enc.fls[4].register_forward_hook(
@@ -115,8 +116,8 @@ def build(ckpt_path, npz_path, n_points=180):
             enc1 = caps["af0"][0][0][:N_ENC1].numpy()    # (16,16,16) layer-1 feats
             code = caps["code"][0].numpy()               # (16,8,8) bottleneck code
             # last encoder AF module: 256 gates, show the first N_GATES
-            gate = af_gate(model.enc.afs[3], *caps["af3"])[:N_GATES].tolist()
-            gate1 = af_gate(model.enc.afs[0], *caps["af0"]).tolist()  # 256 -> summarize
+            gate = af_gate(model.enc.gates[3], *caps["af3"])[:N_GATES].tolist()
+            gate1 = af_gate(model.enc.gates[0], *caps["af0"]).tolist()  # 256 -> summarize
             sym = symbols[s_idx, i]
             idx = np.linspace(0, half - 1, min(n_points, half)).astype(int)
             tx = [[round(float(sym[:half][j]), 3), round(float(sym[half:][j]), 3)]

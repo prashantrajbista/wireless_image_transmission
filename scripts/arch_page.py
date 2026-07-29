@@ -72,7 +72,8 @@ def build(ckpt_path, npz_path):
     ck = torch.load(ckpt_path, map_location="cpu")
     a = ck["args"]
     C, F = ck["C"], a["filters"]
-    m = DeepJSCC(C=C, F=F, attention=True, channel=a.get("channel", "awgn"))
+    m = DeepJSCC(C=C, F=F, cond=a.get("cond", "af"), channel=a.get("channel", "awgn"),
+                 modality=a.get("modality", "image"), norm=a.get("norm"))
     m.load_state_dict(ck["state_dict"])
     m.eval()
 
@@ -97,7 +98,7 @@ def build(ckpt_path, npz_path):
 
     param = lambda mod: sum(p.numel() for p in mod.parameters())
     params = {"total": param(m), "enc": param(m.enc), "dec": param(m.dec),
-              "af": sum(p.numel() for n, p in m.named_parameters() if ".afs." in n)}
+              "af": sum(p.numel() for n, p in m.named_parameters() if ".gates." in n)}
 
     # filmstrip: (label, channels, H, W, image, note)
     def stage(label, shape, image, note):
